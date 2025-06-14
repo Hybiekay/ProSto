@@ -75,8 +75,33 @@ class ProjectController extends Controller
             'document_path' => $aiResponse['docxFilename'],
 
         ]);
-        // Save documents
 
+        $aiResponse = $this->generateInitialDocs($project);
+
+        if ($aiResponse) {
+
+            // Save all formats to database
+            Document::create([
+                'project_id'     => $project->id,
+                'type'           => "overview",
+                'title'          => "Project Overview",
+                'content_raw'    => $aiResponse['raw_markdown'],  // Original Markdown
+                'content_html'   => $aiResponse['raw_html'],      // Generated HTML
+                'content_json'   => json_encode($aiResponse),      // Full JSON response
+                'formats'        => [
+                    'docx' => [
+                        'url'  => $aiResponse['formats']['docx']['url'],
+                        'path' => $aiResponse['formats']['docx']['filename']
+                    ],
+                    'html' => [
+                        'url'  => $aiResponse['formats']['html']['url'],
+                        'path' => $aiResponse['formats']['html']['filename']
+                    ]
+                ],
+
+            ]);
+            // Save documents
+        }
 
         return redirect()->route('projects.show', $project);
     }
