@@ -55,8 +55,8 @@ export type DocType = {
     title: string;
     type: DocCategory;
     status: 'draft' | 'generating' | 'published' | 'archived';
-    created_at: string;
-    updated_at: string;
+    created_at?: string;
+    updated_at?: string;
     progress: number;
     wordCount?: number;
 };

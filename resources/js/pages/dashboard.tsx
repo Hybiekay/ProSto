@@ -30,7 +30,7 @@ export default function Dashboard() {
     // const [projects, setProjects] = React.useState<Project[]>();
     const { props } = usePage();
     console.log(props);
-    const pros: Project[] = props.projects.data as Project[];
+    const pros: Project[] = (props.projects as { data: Project[] }).data;
     const [projects, setProjects] = React.useState<Project[]>(pros);
     const [viewMode, setViewMode] = React.useState<'list' | 'grid'>('grid');
     const [open, setOpen] = React.useState(false);
@@ -75,7 +75,6 @@ export default function Dashboard() {
                         title: `${docType.charAt(0).toUpperCase() + docType?.slice(1)} Documentation`,
                         type: docType,
                         status: 'generating',
-                        lastUpdated: new Date().toISOString(),
                         progress: 0
                     };
 

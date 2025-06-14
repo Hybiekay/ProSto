@@ -37,7 +37,7 @@ export function DocumentCard({ doc, projectId, icon }: {
             <CardContent className="flex-1">
                 <div className="space-y-2 text-sm">
                     <div className="flex items-center justify-between text-muted-foreground">
-                        <span>Last updated: {new Date(doc.updated_at).toLocaleDateString()}</span>
+                        <span>Last updated: {new Date(`${doc?.updated_at}`).toLocaleDateString()}</span>
                         {doc.wordCount && (
                             <span className="text-xs">{doc.wordCount} words</span>
                         )}

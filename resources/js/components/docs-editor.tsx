@@ -16,6 +16,7 @@ import TableCell from '@tiptap/extension-table-cell';
 import TableHeader from '@tiptap/extension-table-header';
 import TableRow from '@tiptap/extension-table-row';
 import Placeholder from '@tiptap/extension-placeholder';
+import Typography from '@tiptap/extension-typography';
 import {
     Bold,
     Italic,
@@ -83,6 +84,7 @@ const RichTextEditor = ({ initialContent, onUpdate, editable }: UseDocsEditorRet
     const [json, setJson] = useState<object | null>(null)
     const editor = useEditor({
         extensions: [
+            Typography,
             StarterKit,
             TextStyle,
             FontFamily.configure({
@@ -113,6 +115,7 @@ const RichTextEditor = ({ initialContent, onUpdate, editable }: UseDocsEditorRet
             Placeholder.configure({
                 placeholder: 'Write something amazing...',
             }),
+
         ],
         onUpdate: ({ editor }) => {
             try {
@@ -132,6 +135,8 @@ const RichTextEditor = ({ initialContent, onUpdate, editable }: UseDocsEditorRet
             },
         },
     });
+
+    if (!editor) return
 
     const addImage = () => {
         const url = window.prompt('Enter the URL of the image:');
@@ -195,9 +200,9 @@ const RichTextEditor = ({ initialContent, onUpdate, editable }: UseDocsEditorRet
                     value={editor.getAttributes('textStyle').fontSize || 'default'}
                     onValueChange={(value) => {
                         if (value === 'default') {
-                            editor.chain().focus().unsetFontSize().run();
+                            editor.chain().focus().removeEmptyTextStyle().run();
                         } else {
-                            editor.chain().focus().setFontSize(value).run();
+                            editor.chain().focus().setMark('textStyle', { fontSize: value }).run();
                         }
                     }}
                 >
