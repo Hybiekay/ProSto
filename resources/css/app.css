@@ -68,6 +68,7 @@
   color utility to any element that depends on these defaults.
 */
 @layer base {
+
     *,
     ::after,
     ::before,
@@ -156,4 +157,30 @@
     body {
         @apply bg-background text-foreground;
     }
+}
+
+
+
+.pdf-safe-theme {
+    --tw-bg-opacity: 1;
+    background-color: white !important;
+    color: black !important;
+}
+
+.ProseMirror h1 {
+    font-size: 2em;
+    font-weight: bold;
+    margin: 0.67em 0;
+}
+
+.ProseMirror h2 {
+    font-size: 1.5em;
+    font-weight: bold;
+    margin: 0.75em 0;
+}
+
+.ProseMirror h3 {
+    font-size: 1.25em;
+    font-weight: bold;
+    margin: 0.83em 0;
 }

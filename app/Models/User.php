@@ -40,9 +40,13 @@ class User extends Authenticatable
     }
 
 
+
+
     public function sharedProjects()
     {
-        return $this->belongsToMany(Project::class, 'project_user_shares')->withTimestamps();
+        return $this->belongsToMany(Project::class, 'project_user_shares', 'user_id', 'project_id')
+            ->withPivot('permission')
+            ->withTimestamps();
     }
 
 

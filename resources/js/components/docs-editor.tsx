@@ -50,7 +50,7 @@ import { Separator } from '@/components/ui/separator';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Input } from '@/components/ui/input';
 import { useAppearance } from '@/hooks/use-appearance';
-
+import { FontSize } from '@/extensions/font-size';
 const FONT_FAMILIES = [
     { label: 'Default', value: 'default' },
     { label: 'Inter', value: 'Inter' },
@@ -72,7 +72,7 @@ const FONT_SIZES = [
 
 interface UseDocsEditorReturn {
     html: string | null
-    initialContent: string | object
+    initialContent: string
     json: object | null
     onUpdate: (content: string) => void
     editable: boolean
@@ -85,7 +85,12 @@ const RichTextEditor = ({ initialContent, onUpdate, editable }: UseDocsEditorRet
     const editor = useEditor({
         extensions: [
             Typography,
-            StarterKit,
+            FontSize,
+            StarterKit.configure({
+                heading: {
+                    levels: [1, 2, 3],
+                },
+            }),
             TextStyle,
             FontFamily.configure({
                 types: ['textStyle'],
@@ -94,6 +99,7 @@ const RichTextEditor = ({ initialContent, onUpdate, editable }: UseDocsEditorRet
             TextAlign.configure({
                 types: ['heading', 'paragraph'],
             }),
+
             Superscript,
             Subscript,
             Highlight.configure({
@@ -126,12 +132,20 @@ const RichTextEditor = ({ initialContent, onUpdate, editable }: UseDocsEditorRet
                 console.error("Editor update error:", e)
             }
         },
+
         editable: editable,
         content: initialContent,
         editorProps: {
             attributes: {
-                class: `prose dark:prose-invert max-w-none focus:outline-none p-4 ${appearance === 'dark' ? 'bg-gray-900 text-gray-100' : 'bg-white text-gray-900'
+                class: `max-w-none focus:outline-none p-4 ${appearance === 'dark'
+                    ? 'bg-gray-900 text-gray-100'
+                    : 'bg-white text-gray-900'
                     }`,
+                style: `
+                h1 { font-size: 2em; font-weight: bold; margin: 0.67em 0; }
+                h2 { font-size: 1.5em; font-weight: bold; margin: 0.83em 0; }
+                h3 { font-size: 1.17em; font-weight: bold; margin: 1em 0; }
+            `,
             },
         },
     });
@@ -202,7 +216,7 @@ const RichTextEditor = ({ initialContent, onUpdate, editable }: UseDocsEditorRet
                         if (value === 'default') {
                             editor.chain().focus().removeEmptyTextStyle().run();
                         } else {
-                            editor.chain().focus().setMark('textStyle', { fontSize: value }).run();
+                            editor.chain().focus().setFontSize(value).run();
                         }
                     }}
                 >
@@ -488,7 +502,7 @@ const RichTextEditor = ({ initialContent, onUpdate, editable }: UseDocsEditorRet
                 </Button>
             </div>
 
-            <EditorContent editor={editor} className="min-h-[600px]" />
+            <EditorContent editor={editor} className="ProseMirror min-h-[600px] " />
         </div>
     );
 };

@@ -39,17 +39,26 @@ export function NewDocCard({ projectId, onGenerate, disabled }: {
                     </DialogDescription>
                 </DialogHeader>
                 <div className="grid grid-cols-2 gap-4 py-4">
-                    {docTypes.map(({ type, label }) => (
-                        <Button
-                            key={type}
-                            variant="outline"
-                            className="h-24 flex flex-col gap-2"
-                            onClick={() => onGenerate(projectId, type)}
-                            disabled={disabled}
-                        >
-                            {label}
-                        </Button>
-                    ))}
+                    {docTypes.map(({ type, label }) => {
+                        const readyFeatures = type === 'technical' || type === 'ui-ux';
+
+                        return (
+                            <Button
+                                key={type}
+                                variant="outline"
+                                className="h-24 flex flex-col gap-1 items-center justify-center text-center relative"
+                                onClick={() => onGenerate(projectId, type)}
+                                disabled={disabled}
+                            >
+                                <span>{label}</span>
+                                {!readyFeatures && (
+                                    <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-md">
+                                        Coming Soon
+                                    </span>
+                                )}
+                            </Button>
+                        );
+                    })}
                 </div>
             </DialogContent>
         </Dialog>

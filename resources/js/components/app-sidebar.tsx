@@ -25,7 +25,7 @@ const mainNavItems: NavItem[] = [
     },
     {
         title: 'Shared With You',
-        href: '/project',
+        href: '/shared-projects',
         icon: LayoutGrid,
         badge: 'New', // Optional: add badge count
     },

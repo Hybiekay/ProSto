@@ -4,12 +4,17 @@ namespace App\Http\Controllers;
 
 use App\Models\Document;
 use App\Models\Project;
+use App\Models\User;
+use App\Services\AiDocsGeneratorPrompt;
+use App\Services\GeminiAgent;
 use App\Services\GeminiKeyManager;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use PhpOffice\PhpWord\PhpWord;
 use PhpOffice\PhpWord\IOFactory;
@@ -19,10 +24,15 @@ class ProjectController extends Controller
 {
 
     private $keyManager = null;
+    private $prompt = null;
+    private $agent = null;
+
 
     public function __construct()
     {
         $this->keyManager = new GeminiKeyManager();
+        $this->prompt = new AiDocsGeneratorPrompt();
+        $this->agent = new GeminiAgent();
     }
 
     public function form()
@@ -32,10 +42,31 @@ class ProjectController extends Controller
 
     public function show(Project $project)
     {
-        $project->load('documents'); // eager load related docs
+        $project->load(['documents', 'sharedUsers']); // eager load related docs
+
+        $isOwner = Auth::check() && Auth::id() === $project->user_id;
+
+        $isRelated = false;
+        $about = null;
+
+        if (!$isOwner && Auth::check()) {
+            // Check if user is in sharedUsers
+
+            // dd($project->sharedUsers);
+            $user = Auth::user();
+            $sharedUser = $project->sharedUsers->firstWhere('id', $user->id);
+            // dd($sharedUser);
+            if ($sharedUser) {
+                $isRelated = true;
+                $about = $sharedUser->pivot->permission ?? null;
+            }
+        }
 
         return Inertia::render('projects/show', [
-            'project' => $project,
+            'project' => $project->toArray(),
+            'isOwner' => $isOwner,
+            'isRelated' => $isRelated,
+            'permission' => $about,
         ]);
     }
 
@@ -62,19 +93,7 @@ class ProjectController extends Controller
 
 
 
-        // Call AI here (you'll use a service class or helper)
-        $aiResponse = $this->generateInitialDocs($project);
 
-        // Save in database
-        Document::create([
-            'project_id' => $project->id,
-            'type'       => "overview",
-            'title'      => "Project Overview",
-            'content'    => $aiResponse['generatedText'], // raw text
-            'doc_url'    => $aiResponse['docxUrl'],       // public file URL
-            'document_path' => $aiResponse['docxFilename'],
-
-        ]);
 
         $aiResponse = $this->generateInitialDocs($project);
 
@@ -85,22 +104,20 @@ class ProjectController extends Controller
                 'project_id'     => $project->id,
                 'type'           => "overview",
                 'title'          => "Project Overview",
-                'content_raw'    => $aiResponse['raw_markdown'],  // Original Markdown
-                'content_html'   => $aiResponse['raw_html'],      // Generated HTML
-                'content_json'   => json_encode($aiResponse),      // Full JSON response
-                'formats'        => [
-                    'docx' => [
-                        'url'  => $aiResponse['formats']['docx']['url'],
-                        'path' => $aiResponse['formats']['docx']['filename']
-                    ],
-                    'html' => [
-                        'url'  => $aiResponse['formats']['html']['url'],
-                        'path' => $aiResponse['formats']['html']['filename']
-                    ]
-                ],
+                'content'    => $aiResponse['raw_html'],  // Original Markdown
+                'formats'   => json_encode($aiResponse),     // Full JSON response
 
             ]);
+
             // Save documents
+
+            // OPTIONAL: Extract new features from AI (if needed)
+            $newFeatures = $this->extractFeaturesFromAI($aiResponse['raw_html']); // implement this
+            if (!empty($newFeatures)) {
+                $project->update([
+                    'features' => $newFeatures,
+                ]);
+            }
         }
 
         return redirect()->route('projects.show', $project);
@@ -110,287 +127,49 @@ class ProjectController extends Controller
     {
         try {
             $apiKey = $this->keyManager->getNextKey();
-            $timestamp = now()->format('YmdHis');
-
             // Prepare the AI prompt based on enhancement mode
-            $prompt = $this->buildPrompt($project);
-
+            $prompt = $this->prompt->overview($project);
             // Generate content from Gemini API
-            $response = $this->callGeminiApi($apiKey, $prompt);
+            $response = $this->agent->callGeminiApi($apiKey, $prompt);
             $generatedText = $response['candidates'][0]['content']['parts'][0]['text'] ?? '';
 
             if (empty($generatedText)) {
                 throw new \Exception('No content generated from AI');
             }
+            // Clean the generated HTML
+            $cleanHtml = $this->cleanGeneratedHtml($generatedText);
 
-            // Save raw outputs
             $outputs = [
-                'raw_markdown' => $generatedText,
-                'raw_html' => $this->markdownToHtml($generatedText),
+                'raw_html' => $cleanHtml,
                 'formats' => []
             ];
-
-            // Generate and save DOCX
-            $docxOutput = $this->generateDocx($generatedText, $timestamp);
-            if ($docxOutput) {
-                $outputs['formats']['docx'] = $docxOutput;
-            }
-
-            // Generate and save HTML file
-            $htmlOutput = $this->generateHtmlFile($outputs['raw_html'], $timestamp);
-            if ($htmlOutput) {
-                $outputs['formats']['html'] = $htmlOutput;
-            }
-
-            // Save raw data for debugging
-            $this->storeDebugData($project, $prompt, $response, $outputs, $timestamp);
-
             return $outputs;
         } catch (\Exception $e) {
             Log::error("Document generation failed: " . $e->getMessage());
             throw $e;
         }
     }
-
-    protected function buildPrompt(Project $project): string
+    protected function extractFeaturesFromAI(string $aiContent): string
     {
-        $baseTemplate = $project->enhanced_mode ?
-            "Enhance and polish the following project idea. Generate professional documentation including:\n" :
-            "Generate complete project documentation including:\n";
+        // Basic regex to capture content under a "Features" heading (can be adjusted)
+        preg_match('/Features\s*:?(.+?)(?=(\n[A-Z][a-z]+|$))/is', $aiContent, $matches);
 
-        return $baseTemplate . "
-- Project Overview
-- Tech Stack Description
-- Feature Explanation
-- About Screen content
-- Platform recommendation (web/mobile)
-- Installation/Setup instructions if applicable
-
-Project Details:
-Name: {$project->name}
-Idea: {$project->project_idea}
-" . ($project->tech_stack ? "Tech Stack: {$project->tech_stack}\n" : "") . "
-Key Features: {$project->features}
-" . ($project->target_audience ? "Target Audience: {$project->target_audience}\n" : "") . "
-
-Format the response in Markdown with appropriate headings (## for sections).";
-    }
-
-    protected function callGeminiApi(string $apiKey, string $prompt): array
-    {
-        return Http::withOptions([
-            'verify' => false,
-            'timeout' => 60,
-        ])->withHeaders([
-            "Content-Type" => "application/json",
-        ])->post("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=$apiKey", [
-            'contents' => [
-                [
-                    'parts' => [
-                        ['text' => $prompt]
-                    ]
-                ]
-            ],
-            'generationConfig' => [
-                'temperature' => 0.7,
-                'topP' => 0.9,
-                'maxOutputTokens' => 2048
-            ]
-        ])->throw()->json();
-    }
-
-    protected function markdownToHtml(string $markdown): string
-    {
-        // Using commonmark for better Markdown parsing
-        $converter = new \League\CommonMark\CommonMarkConverter();
-        return $converter->convert($markdown)->getContent();
-    }
-
-    protected function generateDocx(string $content, string $timestamp): ?array
-    {
-        try {
-            $phpWord = new PhpWord();
-            $section = $phpWord->addSection();
-
-            // Parse markdown and add formatted content
-            $this->addMarkdownToWord($section, $content);
-
-            $tempPath = storage_path("app/temp_{$timestamp}.docx");
-            $writer = IOFactory::createWriter($phpWord, 'Word2007');
-            $writer->save($tempPath);
-
-            $docxFilename = "docs/project_doc_{$timestamp}.docx";
-            Storage::disk('public')->put($docxFilename, file_get_contents($tempPath));
-            unlink($tempPath);
-
-            return [
-                'filename' => $docxFilename,
-                'url' => Storage::url($docxFilename),
-                'size' => Storage::disk('public')->size($docxFilename)
-            ];
-        } catch (\Exception $e) {
-            Log::error("DOCX generation failed: " . $e->getMessage());
-            return null;
+        if (!empty($matches[1])) {
+            $rawFeatures = trim($matches[1]);
+            return strip_tags($rawFeatures); // remove HTML tags and return clean text
         }
+
+        return '';
     }
 
-    protected function generateHtmlFile(string $html, string $timestamp): ?array
+
+    protected function cleanGeneratedHtml(string $generatedText): string
     {
-        try {
-            $htmlFilename = "docs/project_doc_{$timestamp}.html";
-            $fullHtml = "<!DOCTYPE html>
-        <html>
-        <head>
-            <meta charset='UTF-8'>
-            <title>Project Documentation</title>
-            <style>
-                body { font-family: Arial, sans-serif; line-height: 1.6; max-width: 800px; margin: 0 auto; padding: 20px; }
-                h1, h2, h3 { color: #2c3e50; }
-                pre { background: #f4f4f4; padding: 10px; border-radius: 5px; }
-                code { background: #f4f4f4; padding: 2px 5px; border-radius: 3px; }
-            </style>
-        </head>
-        <body>
-        $html
-        </body>
-        </html>";
+        // Remove Markdown code blocks (```html and ```)
+        $cleanText = preg_replace('/```html|```/', '', $generatedText);
 
-            Storage::disk('public')->put($htmlFilename, $fullHtml);
-
-            return [
-                'filename' => $htmlFilename,
-                'url' => Storage::url($htmlFilename),
-                'size' => Storage::disk('public')->size($htmlFilename)
-            ];
-        } catch (\Exception $e) {
-            Log::error("HTML generation failed: " . $e->getMessage());
-            return null;
-        }
+        return trim($cleanText);
     }
-
-    protected function addMarkdownToWord(&$section, $markdown)
-    {
-        // Simple markdown to Word conversion
-        $lines = explode("\n", $markdown);
-        foreach ($lines as $line) {
-            if (preg_match('/^#\s(.+)/', $line, $matches)) {
-                $section->addTitle($matches[1], 1);
-            } elseif (preg_match('/^##\s(.+)/', $line, $matches)) {
-                $section->addTitle($matches[1], 2);
-            } elseif (preg_match('/^###\s(.+)/', $line, $matches)) {
-                $section->addTitle($matches[1], 3);
-            } elseif (preg_match('/^\*\s(.+)/', $line, $matches)) {
-                $section->addListItem($matches[1], 0);
-            } else {
-                $section->addText($line);
-            }
-        }
-    }
-
-    protected function storeDebugData($project, $prompt, $response, $outputs, $timestamp)
-    {
-        Storage::put("logs/generation_{$timestamp}.json", json_encode([
-            'project_id' => $project->id,
-            'prompt' => $prompt,
-            'response' => $response,
-            'outputs' => $outputs,
-            'timestamp' => now()->toDateTimeString()
-        ], JSON_PRETTY_PRINT));
-    }
-
-
-    //     protected function generateInitialDocs(Project $project): array
-    //     {
-    //         $apiKey = $this->keyManager->getNextKey();
-    //         $isEnhanced = $project->enhanced_mode;
-
-    //         $prompt = $isEnhanced ? "
-    // Enhance and polish the following project idea. Generate professional documentation based on the details below.
-
-    // Project Name: {$project->name}
-    // Project Idea: {$project->project_idea}
-    // Tech Stack: {$project->tech_stack}
-    // Key Features: {$project->features}
-    // Target Audience: {$project->target_audience}
-
-    // The documentation should include:
-    // - Enhanced Project Overview
-    // - Tech Stack Description
-    // - Feature Explanation
-    // - About Screen (suggest content)
-    // - Recommend whether this is best as a web or mobile app
-    // " : "
-    // Generate a complete project documentation based on the following information:
-
-    // Project Name: {$project->name}
-    // Project Idea: {$project->project_idea}
-    // Tech Stack: {$project->tech_stack}
-    // Key Features: {$project->features}
-    // Target Audience: {$project->target_audience}
-
-    // The documentation should include:
-    // - Project Overview
-    // - Tech Stack Description
-    // - Feature Explanation
-    // - About Screen (suggest what should be on it)
-    // - Whether it's best suited as a web or mobile project and why
-    // ";
-
-    //         $response = Http::withOptions([
-    //             'verify' => false,
-    //         ])->withHeaders(["Content-Type" => "application/json",])->post("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=$apiKey", [
-    //             'contents' => [
-    //                 [
-    //                     'parts' => [
-    //                         ['text' => $prompt]
-    //                     ]
-    //                 ]
-    //             ]
-    //         ]);
-
-    //         $data = $response->json();
-    //         Storage::put("logs/content" . now()->format('YmdHis') . '.json', json_encode($data, JSON_PRETTY_PRINT));
-
-    //         $generatedText = $data['candidates'][0]['content']['parts'][0]['text'] ?? '';
-    //         $timestamp = now()->format('YmdHis');
-
-    //         $value = [
-    //             'raw_markdown' => $generatedText,
-    //         ];
-    //         Storage::put("logs/value{$timestamp}.json", json_encode($value, JSON_PRETTY_PRINT));
-
-    //         // ✅ Generate and save DOCX
-    //         if (!empty($generatedText)) {
-    //             $phpWord = new PhpWord();
-    //             $section = $phpWord->addSection();
-    //             $section->addText($generatedText);
-
-    //             // Save temp file
-    //             $tempPath = storage_path("app/temp_{$timestamp}.docx");
-    //             $writer = IOFactory::createWriter($phpWord, 'Word2007');
-    //             $writer->save($tempPath);
-
-    //             // Read and store with Laravel's public disk
-    //             $docxContent = file_get_contents($tempPath);
-    //             $docxFilename = "docs/project_doc_{$timestamp}.docx";
-
-    //             // Save to 'public' disk
-    //             Storage::disk('public')->put($docxFilename, $docxContent);
-
-    //             // Remove temp file
-    //             unlink($tempPath);
-
-    //             // Get public URL
-    //             $docxUrl = Storage::url($docxFilename);
-    //         }
-
-    //         return [
-    //             'generatedText' => $generatedText,
-    //             'docxFilename' => $docxFilename ?? null,
-    //             'docxUrl' => $docxUrl ?? null,  // this key must match your usage
-    //         ];
-    //     }
-
 
 
     public function delete($id)
@@ -412,8 +191,35 @@ Format the response in Markdown with appropriate headings (## for sections).";
     }
 
 
-    public function showDocs()
+    // Update user's permission
+    public function updatePermission(Request $request, Project $project, User $user)
     {
-        return Inertia::render('projects/docs/docs-edit');
+        if (!$project->sharedUsers()->where('users.id', $user->id)->exists()) {
+            abort(404, 'User not found in this project');
+        }
+
+        $validated = $request->validate([
+            'permission' => ['required', Rule::in(['view', 'edit'])],
+        ]);
+        // 
+        $project->sharedUsers()->updateExistingPivot($user->id, [
+            'permission' => $validated['permission'],
+        ]);
+
+        return back()->with('success', 'User removed from project');
+    }
+
+    public function remove(Request $request, Project $project, User $user)
+    {
+        if (!$project->sharedUsers()->where('users.id', $user->id)->exists()) {
+            abort(404, 'User not found in this project');
+        }
+
+
+        // Detach user
+        $project->sharedUsers()->detach($user->id);
+
+
+        return back()->with('success', 'User removed from project');
     }
 }

@@ -15,6 +15,8 @@ return new class extends Migration
             $table->id();
             $table->foreignUuid('project_id')->constrained()->cascadeOnDelete();
             $table->foreignUuid('user_id')->constrained()->cascadeOnDelete();
+            $table->enum('permission', ['view', 'edit']);
+
             $table->timestamps();
 
             $table->unique(['project_id', 'user_id']); // prevent duplicates

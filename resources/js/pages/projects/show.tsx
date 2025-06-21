@@ -9,7 +9,11 @@ import {
     GitBranch, MessageSquare, TestTube2, Shield, FileText
 } from 'lucide-react';
 import AppLayout from '@/layouts/app-layout';
-import { Head } from '@inertiajs/react';
+import { Head, router, usePage } from '@inertiajs/react';
+import { Button } from '@/components/ui/button';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { ShareProjectDialog } from '@/components/share-project-dialog';
+import { toast } from 'sonner';
 
 const breadcrumbs: BreadcrumbItem[] = [
     {
@@ -20,11 +24,16 @@ const breadcrumbs: BreadcrumbItem[] = [
 
 interface Props {
     project: Project;
+    isOwner: boolean;
 }
 
-export default function Show({ project }: Props) {
-    const [isGenerating, setIsGenerating] = React.useState(false);
+export default function Show({ project, isOwner }: Props) {
+    const { props } = usePage();
 
+    const [isGenerating, setIsGenerating] = React.useState(false);
+    console.log(project);
+    console.log(props);
+    console.log(props.permission);
     const handleGenerateDocs = (projectId: string, docType: DocCategory) => {
         setIsGenerating(true);
         setTimeout(() => {
@@ -47,6 +56,27 @@ export default function Show({ project }: Props) {
         return icons[type] || <FileText className="h-4 w-4" />;
     };
 
+    const canView = props.isRelated || props.isOwner;
+    if (!canView) {
+        return (
+            <AppLayout breadcrumbs={breadcrumbs}>
+                <Head title="Access Denied" />
+                <div className="flex flex-col items-center justify-center min-h-[60vh]">
+                    <div className="bg-red-100 dark:bg-red-900/30 rounded-full p-6 mb-6">
+                        <Shield className="h-12 w-12 text-red-500" />
+                    </div>
+                    <h2 className="text-3xl font-bold text-foreground mb-2">Access Denied</h2>
+                    <p className="text-muted-foreground mb-6 text-center max-w-md">
+                        You do not have permission to view this project. Please contact the project owner if you believe this is a mistake.
+                    </p>
+                    <Button variant="outline" onClick={() => router.visit('/')}>
+                        Go to Dashboard
+                    </Button>
+                </div>
+            </AppLayout>
+        );
+    }
+
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
             <Head title="Product" />
@@ -58,8 +88,40 @@ export default function Show({ project }: Props) {
                     transition={{ duration: 0.5 }}
                     className="space-y-2"
                 >
-                    <h1 className="text-4xl font-bold text-foreground">{project.name}</h1>
-                    <p className="text-lg text-muted-foreground">{project.description}</p>
+                    <div className="flex justify-between items-start">
+                        <div>
+                            <h1 className="text-4xl font-bold text-foreground">{project.name}</h1>
+                            <p className="text-lg text-muted-foreground">{project.description}</p>
+                        </div>
+
+                        <div className="flex items-center gap-3">
+                            <div className="flex -space-x-2">
+                                {project.shared_users?.map((user: any) => (
+                                    <Avatar key={user.id} className="h-9 w-9 border border-white">
+                                        {user.avatar ? (
+                                            <AvatarImage src={user.avatar} />
+                                        ) : (
+                                            <AvatarFallback>
+                                                {user.name
+                                                    .split(' ')
+                                                    .map((part: string) => part[0])
+                                                    .slice(0, 2)
+                                                    .join('')
+                                                    .toUpperCase()}
+                                            </AvatarFallback>
+                                        )}
+                                    </Avatar>
+                                ))}
+                            </div>
+
+                            {isOwner && <ShareProjectDialog
+                                project={project}
+                            />}
+
+                        </div>
+                    </div>
+
+
 
                     <div className="flex flex-wrap gap-2 mt-3">
                         {project.tech_stack && project.tech_stack.map((tech) => (
@@ -113,15 +175,21 @@ export default function Show({ project }: Props) {
                             <DocumentCard
                                 key={doc.id}
                                 doc={doc}
+                                isOwner={isOwner}
+                                permission={`${props?.permission}`}
                                 projectId={project.id}
                                 icon={getDocIcon(doc.type)}
                             />
                         ))}
-                        <NewDocCard
-                            projectId={project.id}
-                            onGenerate={handleGenerateDocs}
-                            disabled={isGenerating}
-                        />
+                        {props.permission == "edit" || isOwner &&
+
+                            <NewDocCard
+                                projectId={project.id}
+                                onGenerate={handleGenerateDocs}
+                                disabled={isGenerating}
+                            />
+                        }
+
                     </div>
                 </motion.div>
             </div>

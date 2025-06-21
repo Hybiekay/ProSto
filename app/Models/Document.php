@@ -17,6 +17,8 @@ class Document extends Model
         'type',
         'status',
         'last_updated',
+        "content",
+        "formats",
         'word_count',
         "doc_url"
     ];

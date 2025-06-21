@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import RichTextEditor from '@/components/docs-editor';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
@@ -7,73 +7,154 @@ import { Textarea } from '@/components/ui/textarea';
 import AppLayout from '@/layouts/app-layout';
 import { BreadcrumbItem } from '@/types';
 import { Head } from '@inertiajs/react';
+import { router } from '@inertiajs/react';
+import { debounce } from 'lodash'; // or use your own debounce hook
+import { v4 as uuidv4 } from 'uuid'; // For unique key generation
+
+import {
+    DropdownMenu,
+    DropdownMenuTrigger,
+    DropdownMenuContent,
+    DropdownMenuItem,
+} from "@/components/ui/dropdown-menu"; // adjust path if needed
+import axios from 'axios';
+
+import { downloadPDF } from '@/utils/pdfExport';
 const breadcrumbs: BreadcrumbItem[] = [
     {
         title: 'Docs Editor',
         href: '/project-editor',
     },
 ];
-const EditorPage = () => {
-    const [content, setContent] = useState<string>('<h2>My Document</h2><p>Edit me!</p>');
+const EditorPage = ({ document }: { document: any }) => {
+    const [content, setContent] = useState<string>(document.content || '');
     const [aiPrompt, setAiPrompt] = useState('');
     const [aiResponse, setAiResponse] = useState('');
     const [isAiLoading, setIsAiLoading] = useState(false);
+    const [isAiNew, setisAiNewDoc] = useState(false);
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+    const [generationKey, setGenerationKey] = useState('');
 
-    const handleSave = () => {
-        toast.success('Document saved successfully', {
-            description: 'All your changes have been saved',
-            action: {
-                label: 'Undo',
-                onClick: () => console.log('Undo save'),
+    const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
+
+    const [title, setTitle] = useState(document.title || '');
+
+
+
+
+    const handleDownloadPDF = () => {
+        downloadPDF(content)
+    };
+
+
+    const handleDownload = (documentId: string) => {
+        // Direct the browser to the Laravel route
+        window.open(`/document/${documentId}/download`, '_blank');
+    };
+
+    const handleDownloadWord = async () => {
+        // downloadDocx(content)
+        handleDownload(document.id)
+    };
+
+    const handleSave = (html?: string, edittitle?: string) => {
+        setSaveStatus('saving');
+
+        router.put(
+            `/document/${document.id}`,
+            {
+                title: edittitle ?? title,
+                content: html ?? content
             },
-        });
-    };
+            {
+                onSuccess: () => {
+                    setSaveStatus('saved');
+                },
+                onError: () => {
+                    // toast.error('Failed to save document');
+                    setSaveStatus('idle');
 
-    const handleDownload = () => {
-        const blob = new Blob([content], { type: 'text/html' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'document.html';
-        a.click();
-        URL.revokeObjectURL(url);
-
-        toast('Download started', {
-            description: 'Your document is being downloaded',
-            icon: <Download className="w-4 h-4" />,
-        });
+                },
+                preserveScroll: true,
+                preserveState: true,
+            }
+        );
     };
+    // ...existing code...
+    const debouncedSave = useMemo(() => debounce(handleSave, 1000), []);
+
+
+
+
+    useEffect(() => {
+        setContent(document.content || '');
+    }, [document.content]);
+
+
 
     const handleCopy = async () => {
         try {
-            await navigator.clipboard.writeText(content);
-            toast.success('Copied to clipboard');
+            const blob = new Blob([content], { type: 'text/html' });
+            const data = [new ClipboardItem({ 'text/html': blob })];
+
+            await navigator.clipboard.write(data);
+
+            toast.success('Formatted content copied to clipboard');
         } catch (err) {
+            console.error('Copy failed:', err);
             toast.error('Failed to copy content');
         }
     };
+
+
+    // const handleAiRequest = async () => {
+    //     if (!aiPrompt.trim()) return;
+
+    //     setIsAiLoading(true);
+    //     console.log(document.content)
+    //     router.post(
+    //         `/document/${document.id}/ai-edit`,
+    //         { prompt: aiPrompt },
+    //         {
+    //             onSuccess: () => {
+    //                 router.reload()
+    //                 router.reload({ only: ['document'] }); // This will reload just the `document` prop
+    //                 setContent(document.content)
+    //                 toast.success("AI edit applied");
+    //                 setContent(document.content)
+    //                 setContent(document.content)
+    //                 console.log(document)
+
+    //             },
+    //             onError: () => {
+    //                 toast.error('AI edit failed');
+    //             },
+    //             onFinish: () => {
+    //                 setIsAiLoading(false);
+    //             },
+    //         }
+    //     );
+    // };
+
 
     const handleAiRequest = async () => {
         if (!aiPrompt.trim()) return;
 
         setIsAiLoading(true);
         try {
-            // Simulate AI API call
-            await new Promise(resolve => setTimeout(resolve, 1500));
+            const response = await axios.post(`/document/${document.id}/ai-edit`, {
+                prompt: aiPrompt,
+            });
 
-            // Mock response - in a real app you would call your AI API
-            const mockResponses = [
-                "Consider adding more details about your project goals in the introduction.",
-                "Your document could benefit from bullet points to highlight key features.",
-                "The structure looks good! Maybe add some examples to illustrate your points.",
-                "I suggest breaking this into smaller paragraphs for better readability."
-            ];
+            // Update state with new content directly
+            console.log(response.data.content)
+            console.log(response.data.content.content)
+            setContent(response.data.content.content);
+            setGenerationKey(uuidv4());
 
-            const response = mockResponses[Math.floor(Math.random() * mockResponses.length)];
-            setAiResponse(response);
+            toast.success("AI edit applied");
         } catch (error) {
-            toast.error('Failed to get AI response');
+            toast.error('AI edit failed');
         } finally {
             setIsAiLoading(false);
         }
@@ -157,7 +238,7 @@ const EditorPage = () => {
                                         className="w-full"
                                         onClick={() => setAiPrompt('Suggest a better structure for this document')}
                                     >
-                                        Improve Structure
+                                        Generated New Doc
                                     </Button>
                                 </div>
                             </div>
@@ -167,51 +248,75 @@ const EditorPage = () => {
 
                 <div className={`flex-1 overflow-auto ${isSidebarOpen ? 'w-3/4' : 'w-full'}`}>
                     <div className="max-w-4xl mx-auto p-4 space-y-4">
+
                         <div className="flex justify-between items-center">
-                            <div className="flex items-center gap-4">
-                                <h1 className="text-2xl font-bold">Document Editor</h1>
+                            <div className="flex items-center gap-2">
+                                <input
+                                    type="text"
+                                    value={title}
+                                    onChange={(e) => {
+                                        setTitle(e.target.value);
+                                        setSaveStatus('saving');
+                                        debouncedSave(content, e.target.value);
+                                    }}
+                                    placeholder="Document Title"
+                                    className="text-base font-medium bg-transparent border-b border-gray-300 focus:border-blue-500 outline-none px-1 py-0.5 w-48"
+                                />
+
+                                <div className="text-xs text-gray-500 w-14">
+                                    {saveStatus === 'saving' && <span>Saving...</span>}
+                                    {saveStatus === 'saved' && <span className="text-green-600">Saved</span>}
+                                    {saveStatus === 'idle' && <span>Idle</span>}
+                                </div>
+
                                 <Button
                                     variant="outline"
                                     size="sm"
                                     onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-                                    className="flex items-center gap-2"
+                                    className="flex items-center gap-1"
                                 >
                                     <Wand2 className="h-4 w-4" />
                                     {isSidebarOpen ? 'Hide AI' : 'Show AI'}
                                 </Button>
                             </div>
+
                             <div className="flex gap-2">
                                 <Button variant="outline" onClick={handleCopy}>
                                     <Copy className="mr-2 h-4 w-4" />
                                     Copy
                                 </Button>
-                                <Button variant="outline" onClick={handleDownload}>
-                                    <Download className="mr-2 h-4 w-4" />
-                                    Download
-                                </Button>
-                                <Button onClick={handleSave}>
-                                    <Save className="mr-2 h-4 w-4" />
-                                    Save
-                                </Button>
+                                <DropdownMenu>
+                                    <DropdownMenuTrigger asChild>
+                                        <Button variant="outline">
+                                            <Download className="mr-2 h-4 w-4" />
+                                            Download
+                                        </Button>
+                                    </DropdownMenuTrigger>
+                                    <DropdownMenuContent align="end">
+                                        <DropdownMenuItem onClick={handleDownloadPDF}>
+                                            PDF
+                                        </DropdownMenuItem>
+                                        <DropdownMenuItem onClick={handleDownloadWord}>
+                                            Word Document (.docx)
+                                        </DropdownMenuItem>
+                                    </DropdownMenuContent>
+                                </DropdownMenu>
+
                             </div>
                         </div>
 
                         <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
                             <RichTextEditor
+                                key={generationKey}
                                 initialContent={content}
-                                onUpdate={(html) => setContent(html)}
+                                onUpdate={(html) => {
+                                    console.log(html)
+                                    setContent(html);
+                                    debouncedSave(html);
+                                }}
                                 editable={true} html={null} json={null} />
                         </div>
 
-                        {/* Preview section */}
-                        <div className="mt-8">
-                            <h2 className="text-xl font-semibold mb-2">HTML Preview</h2>
-                            <div className="p-4 bg-gray-50 rounded border border-gray-200 overflow-auto max-h-60">
-                                <code className="text-sm text-gray-700">
-                                    {content}
-                                </code>
-                            </div>
-                        </div>
                     </div>
                 </div>
 

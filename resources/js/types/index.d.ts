@@ -64,7 +64,6 @@ export type DocType = {
 export type Project = {
     id: string;
     name: string;
-
     description: string;
     tech_stack?: string[];
     enhanced_mode: boolean;
@@ -74,6 +73,8 @@ export type Project = {
     created_at: string;
     updated_at: string;
     documents: DocType[];
+    shared_users?: Users[]
+    owner?: Users
 };
 
 export type DocCategory =

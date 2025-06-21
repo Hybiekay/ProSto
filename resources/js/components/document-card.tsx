@@ -4,12 +4,16 @@ import { Button } from "./ui/button";
 import { MoreVertical } from "lucide-react";
 import { Badge } from "./ui/badge";
 import { Progress } from "./ui/progress";
+import { router } from "@inertiajs/react";
 
-export function DocumentCard({ doc, projectId, icon }: {
+export function DocumentCard({ doc, projectId, icon, permission, isOwner }: {
     doc: DocType;
     projectId: string;
+    permission: string;
+    isOwner: boolean
     icon: React.ReactNode;
 }) {
+    const canEdit = permission == "edit" || isOwner;
     return (
         <Card className="hover:shadow-md transition-shadow h-full flex flex-col group">
             <CardHeader className="pb-3">
@@ -54,12 +58,20 @@ export function DocumentCard({ doc, projectId, icon }: {
                 </div>
             </CardContent>
             <CardFooter className="flex justify-between gap-2">
-                <Button variant="outline" size="sm" className="flex-1">
+                <Button onClick={() => router.visit(`/document/${doc.id}/view`)} variant="outline" size="sm" className="flex-1">
                     View
                 </Button>
-                <Button variant="outline" size="sm" className="flex-1" disabled={doc.status === 'generating'}>
-                    Edit
-                </Button>
+                {canEdit &&
+                    <Button
+                        onClick={() => router.visit(`/document/${doc.id}/edit`)}
+                        variant="outline"
+                        size="sm"
+                        className="flex-1"
+                        disabled={doc.status === 'generating'}
+                    >
+                        Edit
+                    </Button>
+                }
                 <Button variant="ghost" size="sm" className="px-2">
                     <MoreVertical className="h-4 w-4" />
                 </Button>
